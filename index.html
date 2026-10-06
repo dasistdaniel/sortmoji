@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MojiSort 🧩</title>
+<style>
+  :root {
+    --bg1: #1a1a2e;
+    --bg2: #16213e;
+    --tube: rgba(255, 255, 255, 0.06);
+    --tube-border: rgba(255, 255, 255, 0.18);
+    --accent: #4fc3f7;
+    --accent2: #ffd54f;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: "Segoe UI Emoji", "Segoe UI", system-ui, sans-serif;
+    background: linear-gradient(160deg, var(--bg1), var(--bg2));
+    color: #eee;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    user-select: none;
+    overflow-x: hidden;
+  }
+  header { text-align: center; margin-top: 24px; }
+  h1 { font-size: clamp(1.6rem, 5vw, 2.4rem); letter-spacing: 2px; }
+  h1 span { filter: drop-shadow(0 0 8px var(--accent)); }
+  .stats {
+    margin-top: 8px;
+    display: flex; gap: 18px; justify-content: center;
+    font-size: 0.95rem; color: #aaa;
+  }
+  .stats b { color: var(--accent2); }
+
+  #board {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 14px;
+    padding: 28px 12px;
+    max-width: 760px;
+  }
+  .tube {
+    width: 74px;
+    height: 340px;
+    background: var(--tube);
+    border: 2px solid var(--tube-border);
+    border-bottom: 6px solid var(--tube-border);
+    border-radius: 12px 12px 18px 18px;
+    display: flex;
+    flex-direction: column-reverse; /* unten -> oben */
+    justify-content: flex-start;
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform .15s, box-shadow .15s, border-color .15s;
+    position: relative;
+  }
+  .tube::before {  /* Balken / Trennwand-Optik zwischen Türmen */
+    content: "";
+    position: absolute;
+    right: -8px; top: 8%;
+    width: 2px; height: 84%;
+    background: rgba(255,255,255,0.07);
+  }
+  .tube:last-child::before { display: none; }
+  .tube:hover { transform: translateY(-4px); }
+  .tube.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 18px rgba(79,195,247,.45);
+    transform: translateY(-8px);
+  }
+  .tube.done {
+    border-color: var(--accent2);
+    box-shadow: 0 0 14px rgba(255,213,79,.35);
+  }
+  .tube.shake { animation: shake .3s; }
+  .tube.invalid {
+    animation: shake .3s;
+    border-color: #ef5350 !important;
+    box-shadow: 0 0 16px rgba(239,83,80,.55) !important;
+  }
+  @keyframes shake {
+    0%,100% { transform: translateX(0); }
+    25% { transform: translateX(-5px); }
+    75% { transform: translateX(5px); }
+  }
+  /* Einmal-Blitz, wenn ein Turm fertig sortiert ist */
+  .tube.flash { animation: flashDone .7s ease; }
+  @keyframes flashDone {
+    0%   { box-shadow: 0 0 0 0 rgba(255,213,79,.9); }
+    40%  { transform: scale(1.06); }
+    100% { box-shadow: 0 0 0 22px rgba(255,213,79,0); }
+  }
+  /* Einflug-Animation beim Spielstart */
+  .slot.deal { animation: dropIn .5s cubic-bezier(.2, 1.4, .4, 1) backwards; }
+  @keyframes dropIn {
+    from { transform: translateY(-46px) scale(.4); opacity: 0; }
+  }
+  /* Ausgewählter Turm hebt ab */
+  .slot.lift { transform: translateY(-5px) scale(1.08); }
+  /* Sieges-Animation: Türme tanzen nacheinander */
+  .tube.celebrate {
+    animation: dance .6s ease infinite alternate;
+    border-color: var(--accent2);
+    box-shadow: 0 0 22px rgba(255,213,79,.6);
+  }
+  @keyframes dance {
+    from { transform: translateY(0) rotate(0deg); }
+    to   { transform: translateY(-12px) rotate(1.5deg); }
+  }
+  .slot {
+    height: 20%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 2rem;
+    border-top: 1px dashed rgba(255,255,255,0.07);
+    transition: transform .15s ease;
+  }
+  .slot.top { animation: pop .25s ease; }
+  @keyframes pop {
+    0% { transform: scale(.6); opacity: .3; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  .hint {
+    height: 5px; width: 60%;
+    margin: 0 auto 6px;
+    border-radius: 3px;
+    background: transparent;
+  }
+  .tube.selected .hint { background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+
+  .controls { display: flex; gap: 10px; margin-bottom: 30px; flex-wrap: wrap; justify-content: center; }
+  button {
+    font: inherit; font-size: .95rem;
+    padding: 10px 18px;
+    border-radius: 10px;
+    border: 1px solid var(--tube-border);
+    background: rgba(255,255,255,0.08);
+    color: #eee;
+    cursor: pointer;
+    transition: background .15s, transform .1s;
+  }
+  button:hover { background: rgba(255,255,255,0.16); }
+  button:active { transform: scale(.96); }
+
+  /* Konfetti */
+  #confetti {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 20;
+  }
+
+  /* Im Hintergrund treibende Emojis */
+  .floater {
+    position: fixed;
+    bottom: -70px;
+    opacity: .08;
+    pointer-events: none;
+    z-index: 0;
+    animation: floatUp linear infinite;
+  }
+  @keyframes floatUp {
+    from { transform: translateY(0) rotate(0deg); }
+    to   { transform: translateY(-115vh) rotate(360deg); }
+  }
+  header, #board, .controls { position: relative; z-index: 1; }
+
+  /* Win-Overlay */
+  #winOverlay {
+    position: fixed; inset: 0;
+    background: rgba(10,10,25,.85);
+    display: none;
+    align-items: center; justify-content: center;
+    z-index: 10;
+  }
+  #winOverlay.show { display: flex; }
+  .winCard {
+    background: var(--bg2);
+    border: 2px solid var(--accent2);
+    border-radius: 16px;
+    padding: 32px 44px;
+    text-align: center;
+    box-shadow: 0 0 60px rgba(255,213,79,.35);
+    animation: bounceIn .55s cubic-bezier(.2, 1.6, .4, 1);
+  }
+  @keyframes bounceIn {
+    0%   { transform: scale(0) rotate(-8deg); opacity: 0; }
+    60%  { transform: scale(1.12) rotate(2deg); opacity: 1; }
+    100% { transform: scale(1) rotate(0deg); }
+  }
+  .winCard .trophy {
+    font-size: 3.4rem;
+    display: inline-block;
+    animation: trophyWiggle 1.2s ease-in-out infinite;
+  }
+  @keyframes trophyWiggle {
+    0%,100% { transform: rotate(-8deg) scale(1); }
+    50%     { transform: rotate(8deg) scale(1.15); }
+  }
+  .winCard h2 {
+    font-size: 2rem; margin: 10px 0 6px;
+    background: linear-gradient(90deg, var(--accent2), var(--accent), var(--accent2));
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: shine 2.5s linear infinite;
+  }
+  @keyframes shine { to { background-position: 200% center; } }
+  .winCard p { color: #aaa; margin-bottom: 20px; }
+  .winCard .stars { font-size: 1.6rem; letter-spacing: 6px; }
+  .winCard .stars span { display: inline-block; animation: starPop .5s ease backwards; }
+  .winCard .stars span:nth-child(2) { animation-delay: .15s; }
+  .winCard .stars span:nth-child(3) { animation-delay: .3s; }
+  @keyframes starPop {
+    from { transform: scale(0) rotate(180deg); opacity: 0; }
+    to   { transform: scale(1) rotate(0deg); opacity: 1; }
+  }
+
+  @media (max-width: 560px) {
+    .tube { width: 56px; height: 270px; }
+    .slot { font-size: 1.5rem; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>MojiSort <span>🧩</span></h1>
+  <div class="stats">
+    <span>Züge: <b id="moves">0</b></span>
+    <span>Sortiert: <b id="sorted">0</b>/5</span>
+  </div>
+</header>
+
+<div id="board"></div>
+
+<div class="controls">
+  <button id="undoBtn">↩️ Undo</button>
+  <button id="restartBtn">🔄 Neustart</button>
+  <button id="shuffleBtn">🎲 Neues Spiel</button>
+  <button id="soundBtn">🔊</button>
+</div>
+
+<canvas id="confetti"></canvas>
+
+<div id="winOverlay">
+  <div class="winCard">
+    <div class="trophy">🏆</div>
+    <h2>Geschafft!</h2>
+    <div class="stars"><span>⭐</span><span>⭐</span><span>⭐</span></div>
+    <p>Alle Emojis sortiert in <b id="winMoves"></b> Zügen.</p>
+    <button id="winNewBtn">🎲 Neues Spiel</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  const EMOJIS = ["🚀", "🌟", "🍀", "🔥", "🐙"];
+  const CAP = 5;          // Kapazität pro Turm
+  const FILLED = 5;       // Anzahl startgefüllter Türme
+  const TUBES = FILLED + 1; // + 1 leerer Hilfsturm
+
+  let columns = [];   // columns[turm] = Array von unten nach oben
+  let startState = null;
+  let selected = null;
+  let moves = 0;
+  let history = [];   // { from, to, count }
+  let won = false;
+  let doneTubes = new Set(); // welche Türme bereits fertig sortiert sind (für den Blitz)
+
+  const boardEl = document.getElementById("board");
+  const movesEl = document.getElementById("moves");
+  const sortedEl = document.getElementById("sorted");
+  const overlayEl = document.getElementById("winOverlay");
+
+  // ---------- Spiellogik ----------
+
+  function newGame() {
+    // Pool: jede Emoji-Sorte 5x, mischen
+    const pool = [];
+    for (const e of EMOJIS) for (let i = 0; i < CAP; i++) pool.push(e);
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    columns = Array.from({ length: TUBES }, () => []);
+    for (let t = 0; t < FILLED; t++) {
+      for (let i = 0; i < CAP; i++) columns[t].push(pool.pop());
+    }
+    startState = columns.map(c => [...c]);
+    selected = null;
+    moves = 0;
+    history = [];
+    won = false;
+    doneTubes = new Set();
+    stopConfetti();
+    overlayEl.classList.remove("show");
+    render(-1, { deal: true });
+  }
+
+  function restart() {
+    columns = startState.map(c => [...c]);
+    selected = null;
+    moves = 0;
+    history = [];
+    won = false;
+    stopConfetti();
+    overlayEl.classList.remove("show");
+    render();
+  }
+
+  // oberster zusammenhängender Turm gleicher Emojis
+  function topRun(col) {
+    const c = columns[col];
+    if (c.length === 0) return null;
+    const emoji = c[c.length - 1];
+    let n = 0;
+    for (let i = c.length - 1; i >= 0 && c[i] === emoji; i--) n++;
+    return { emoji, count: n };
+  }
+
+  function isUniform(c) {
+    return c.length > 0 && c.every(e => e === c[0]);
+  }
+
+  // Sieg: jeder Turm leer ODER komplett voll mit nur einer Emoji-Sorte
+  function isWin() {
+    return columns.every(c => c.length === 0 || (c.length === CAP && isUniform(c)));
+  }
+
+  function tryMove(from, to) {
+    const run = topRun(from);
+    if (!run) return;
+
+    // sinnlose Züge verhindern: kompletten sortierten Turm in leeren Turm verschieben
+    if (columns[to].length === 0 && columns[from].length === run.count) return invalidate(to);
+
+    // Abgelegt werden darf überall, wo Platz ist – das Ziel-Emoji muss nicht passen.
+    const free = CAP - columns[to].length;
+    if (free === 0) return invalidate(to);
+    const count = Math.min(run.count, free);
+
+    history.push({ from, to, count });
+
+    // Startpositionen ALLER bewegten Emojis JETZT merken – nach dem Neu-Rendern
+    // sind die alten Slots aus dem DOM entfernt und hätten keine Koordinaten mehr
+    const srcLen = columns[from].length;
+    const srcRects = [];
+    for (let idx = 0; idx < count; idx++) {
+      const slotEl = boardEl.children[from].children[srcLen - idx]; // idx 0 = oberstes
+      srcRects.push(slotEl.getBoundingClientRect());
+    }
+    const moved = [];
+    for (let i = 0; i < count; i++) moved.push(columns[from].pop());
+    for (const e of moved) columns[to].push(e);
+
+    moves++;
+    selected = null;
+    sfx.place(count);
+
+    // Ziel erst OHNE die neuen Emojis rendern – sie erscheinen erst, wenn die
+    // fliegenden Emojis landen (sonst wirken sie zu früh)
+    render(to, { hideTop: count });
+    const landSlots = [...boardEl.children[to].children]
+      .slice(1 + columns[to].length - count, 1 + columns[to].length)
+      .reverse(); // landSlots[idx] = Landeplatz von moved[idx]
+
+    // Jedes Emoji fliegt einzeln, leicht versetzt (Kaskade)
+    const STAGGER = 55, FLIGHT = 300;
+    srcRects.forEach((srcRect, idx) => {
+      flyGhost(moved[idx], srcRect, landSlots[idx], idx * STAGGER);
+      setTimeout(() => {
+        landSlots[idx].textContent = moved[idx];
+        landSlots[idx].classList.add("top");
+      }, FLIGHT + idx * STAGGER);
+    });
+    updateStats();
+
+    if (!won && isWin()) {
+      won = true;
+      // kurz warten, bis auch das letzte Emoji gelandet ist
+      setTimeout(celebrate, FLIGHT + (count - 1) * STAGGER + 80);
+    }
+  }
+
+  function celebrate() {
+    // Türme tanzen nacheinander
+    [...boardEl.children].forEach((tube, i) => {
+      if (tube.classList.contains("done")) {
+        tube.style.animationDelay = (i * 0.12) + "s";
+        tube.classList.add("celebrate");
+      }
+    });
+    document.getElementById("winMoves").textContent = moves;
+    startConfetti();
+    sfx.win();
+    setTimeout(() => overlayEl.classList.add("show"), 900);
+  }
+
+  function invalidate(col) {
+    sfx.error();
+    const tube = boardEl.children[col];
+    tube.classList.add("invalid");
+    setTimeout(() => tube.classList.remove("invalid"), 340);
+  }
+
+  // Emoji fliegt sichtbar vom Quell- zum Zielturm (optional zeitversetzt)
+  function flyGhost(emoji, fromRect, dstSlot, delay = 0) {
+    const toRect = dstSlot.getBoundingClientRect();
+    const fontPx = parseFloat(getComputedStyle(dstSlot).fontSize);
+    const g = document.createElement("div");
+    g.textContent = emoji;
+    g.style.cssText =
+      "position:fixed;left:0;top:0;pointer-events:none;z-index:15;" +
+      "font-size:" + fontPx + "px;line-height:1;" +
+      "transition:transform .3s cubic-bezier(.3,.7,.4,1) " + delay + "ms;" +
+      "transform:translate(" + (fromRect.left + fromRect.width / 2 - fontPx / 2) + "px," +
+      (fromRect.top + fromRect.height / 2 - fontPx / 2) + "px)";
+    document.body.appendChild(g);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      g.style.transform = "translate(" + (toRect.left + toRect.width / 2 - fontPx / 2) + "px," +
+        (toRect.top + toRect.height / 2 - fontPx / 2) + "px) scale(1.15)";
+    }));
+    setTimeout(() => g.remove(), 340 + delay);
+  }
+
+  function undo() {
+    const last = history.pop();
+    if (!last) return;
+    const moved = [];
+    for (let i = 0; i < last.count; i++) moved.push(columns[last.to].pop());
+    for (const e of moved) columns[last.from].push(e);
+    moves = Math.max(0, moves - 1);
+    selected = null;
+    won = false;
+    doneTubes = new Set();
+    stopConfetti();
+    overlayEl.classList.remove("show");
+    render();
+    updateStats();
+  }
+
+  function onTubeClick(i) {
+    if (selected === null) {
+      if (columns[i].length === 0) return invalidate(i);
+      selected = i;
+      sfx.select();
+      render();
+    } else if (selected === i) {
+      selected = null;
+      sfx.deselect();
+      render();
+    } else {
+      tryMove(selected, i);
+    }
+  }
+
+  // ---------- Anzeige ----------
+
+  function render(animCol = -1, opts = {}) {
+    boardEl.innerHTML = "";
+    columns.forEach((col, i) => {
+      const tube = document.createElement("div");
+      tube.className = "tube";
+      if (i === selected) tube.classList.add("selected");
+      const done = col.length === CAP && isUniform(col);
+      if (done) tube.classList.add("done");
+      // Einmal-Blitz, wenn ein Turm NEU fertig sortiert wurde
+      if (done && !doneTubes.has(i)) {
+        tube.classList.add("flash");
+        doneTubes.add(i);
+      } else if (!done) {
+        doneTubes.delete(i);
+      }
+      tube.addEventListener("click", () => onTubeClick(i));
+
+      // Platzhalter-Hinweis unten am ausgewählten Turm
+      const hint = document.createElement("div");
+      hint.className = "hint";
+      tube.appendChild(hint);
+
+      const liftFrom = (i === selected) ? topRun(i).count : 0;
+
+      // oberste `hideTop` Slots noch leer lassen (Flug-Animation läuft noch)
+      const hideFrom = (i === animCol && opts.hideTop) ? col.length - opts.hideTop : CAP;
+
+      for (let s = 0; s < CAP; s++) {
+        const slot = document.createElement("div");
+        slot.className = "slot";
+        if (s < col.length && s < hideFrom) {
+          slot.textContent = col[s];
+          if (opts.deal) {
+            slot.classList.add("deal");
+            slot.style.animationDelay = (i * 0.08 + s * 0.05) + "s";
+          } else if (i === animCol && s === col.length - 1) {
+            slot.classList.add("top");
+          }
+          if (liftFrom > 0 && s >= col.length - liftFrom) slot.classList.add("lift");
+        }
+        tube.appendChild(slot);
+      }
+      boardEl.appendChild(tube);
+    });
+    updateStats();
+  }
+
+  function updateStats() {
+    movesEl.textContent = moves;
+    sortedEl.textContent = columns.filter(c => c.length === CAP && isUniform(c)).length;
+  }
+
+  // ---------- Sound (Web Audio, ohne Dateien) ----------
+
+  const sfx = (() => {
+    const soundBtn = document.getElementById("soundBtn");
+    let ctx = null;
+    let muted = localStorage.getItem("mojisort-muted") === "1";
+
+    function updateBtn() { soundBtn.textContent = muted ? "🔇" : "🔊"; }
+    updateBtn();
+
+    function ensureCtx() {
+      // AudioContext erst nach erster Nutzer-Interaktion starten (Browser-Regeln)
+      if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+      if (ctx.state === "suspended") ctx.resume();
+      return ctx;
+    }
+
+    // Ein Ton mit Hüllkurve (attack -> decay)
+    function tone(freq, dur, { type = "sine", vol = 0.15, delay = 0, slideTo = null } = {}) {
+      if (muted) return;
+      const ac = ensureCtx();
+      const t0 = ac.currentTime + delay;
+      const osc = ac.createOscillator();
+      const gain = ac.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, t0);
+      if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, t0 + dur);
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.exponentialRampToValueAtTime(vol, t0 + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      osc.connect(gain).connect(ac.destination);
+      osc.start(t0);
+      osc.stop(t0 + dur + 0.05);
+    }
+
+    return {
+      toggle() {
+        muted = !muted;
+        localStorage.setItem("mojisort-muted", muted ? "1" : "0");
+        updateBtn();
+        if (!muted) this.click();
+      },
+      select()   { tone(520, 0.09, { type: "triangle", vol: 0.12 }); },
+      deselect() { tone(380, 0.08, { type: "triangle", vol: 0.08 }); },
+      place(n) {
+        // "Plop" – Tonhöhe steigt mit der Anzahl gesteckter Emojis
+        for (let i = 0; i < n; i++) {
+          tone(220 + i * 40, 0.1, { type: "sine", vol: 0.16, delay: i * 0.06, slideTo: 160 + i * 40 });
+        }
+      },
+      error() {
+        tone(140, 0.18, { type: "sawtooth", vol: 0.1 });
+        tone(110, 0.22, { type: "sawtooth", vol: 0.1, delay: 0.08 });
+      },
+      click()    { tone(700, 0.05, { type: "square", vol: 0.06 }); },
+      win() {
+        // kleine Fanfare
+        const notes = [523.25, 659.25, 783.99, 1046.5, 783.99, 1046.5];
+        notes.forEach((f, i) => tone(f, 0.28, { type: "triangle", vol: 0.16, delay: i * 0.14 }));
+        tone(261.63, 1.0, { type: "sine", vol: 0.1, delay: 0.15 }); // Bass-Halteton
+      },
+    };
+  })();
+
+  // ---------- Konfetti ----------
+
+  const canvas = document.getElementById("confetti");
+  const ctx = canvas.getContext("2d");
+  let particles = [];
+  let confettiRaf = null;
+  const CONFETTI_COLORS = ["#ffd54f", "#4fc3f7", "#ef5350", "#66bb6a", "#ab47bc", "#ff8a65"];
+
+  function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  window.addEventListener("resize", resizeCanvas);
+  resizeCanvas();
+
+  function spawnConfetti(n) {
+    for (let i = 0; i < n; i++) {
+      const isEmoji = Math.random() < 0.25;
+      particles.push({
+        x: Math.random() * canvas.width,
+        y: -30 - Math.random() * canvas.height * 0.5,
+        vx: (Math.random() - 0.5) * 2.5,
+        vy: 2 + Math.random() * 3.5,
+        size: isEmoji ? 18 + Math.random() * 14 : 6 + Math.random() * 6,
+        color: CONFETTI_COLORS[(Math.random() * CONFETTI_COLORS.length) | 0],
+        emoji: EMOJIS[(Math.random() * EMOJIS.length) | 0],
+        isEmoji,
+        rot: Math.random() * Math.PI * 2,
+        vr: (Math.random() - 0.5) * 0.2,
+        wobble: Math.random() * Math.PI * 2,
+      });
+    }
+  }
+
+  function confettiLoop() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    particles = particles.filter(p => p.y < canvas.height + 40);
+    for (const p of particles) {
+      p.wobble += 0.06;
+      p.x += p.vx + Math.sin(p.wobble) * 0.6;
+      p.y += p.vy;
+      p.rot += p.vr;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      if (p.isEmoji) {
+        ctx.font = p.size + "px serif";
+        ctx.textAlign = "center";
+        ctx.fillText(p.emoji, 0, 0);
+      } else {
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-p.size / 2, -p.size / 4, p.size, p.size / 2);
+      }
+      ctx.restore();
+    }
+    if (particles.length > 0) {
+      confettiRaf = requestAnimationFrame(confettiLoop);
+    } else {
+      confettiRaf = null;
+    }
+  }
+
+  function startConfetti() {
+    if (confettiRaf) { cancelAnimationFrame(confettiRaf); confettiRaf = null; }
+    particles = [];
+    // zwei Schübe für einen längeren Effekt
+    spawnConfetti(110);
+    setTimeout(() => { if (won) spawnConfetti(80); }, 1200);
+    confettiRaf = requestAnimationFrame(confettiLoop);
+  }
+
+  function stopConfetti() {
+    if (confettiRaf) { cancelAnimationFrame(confettiRaf); confettiRaf = null; }
+    particles = [];
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+
+  // ---------- Events ----------
+
+  document.getElementById("undoBtn").addEventListener("click", () => { sfx.click(); undo(); });
+  document.getElementById("restartBtn").addEventListener("click", () => { sfx.click(); restart(); });
+  document.getElementById("shuffleBtn").addEventListener("click", () => { sfx.click(); newGame(); });
+  document.getElementById("winNewBtn").addEventListener("click", () => { sfx.click(); newGame(); });
+  document.getElementById("soundBtn").addEventListener("click", () => sfx.toggle());
+
+  // Im Hintergrund treibende Emojis
+  (function spawnFloaters() {
+    const set = ["🚀", "🌟", "🍀", "🔥", "🐙", "⭐", "🧩", "🎲"];
+    set.forEach((e, i) => {
+      const d = document.createElement("div");
+      d.className = "floater";
+      d.textContent = e;
+      d.style.left = ((i * 12 + 4) % 92) + "%";
+      d.style.fontSize = (1.3 + Math.random() * 1.7).toFixed(2) + "rem";
+      d.style.animationDuration = (16 + Math.random() * 12).toFixed(1) + "s";
+      d.style.animationDelay = "-" + (Math.random() * 14).toFixed(1) + "s";
+      document.body.appendChild(d);
+    });
+  })();
+
+  newGame();
+})();
+</script>
+</body>
+</html>
