@@ -1,6 +1,10 @@
 # MojiSort 🧩
 
+![MojiSort – Das Emoji-Sortier-Puzzle](docs/social-preview.png)
+
 Ein kleines Emoji-Sortier-Puzzle, das als statische Seite direkt auf **GitHub Pages** läuft – ganz ohne Build-Prozess.
+
+**▶️ Jetzt spielen:** https://dasistdaniel.github.io/sortmoji/
 
 ## Spielprinzip
 
